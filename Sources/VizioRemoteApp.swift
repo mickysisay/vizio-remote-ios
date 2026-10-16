@@ -43,7 +43,13 @@ struct ContentView: View {
 struct SettingsView: View {
     var isFirstRun: Bool = false
     @EnvironmentObject private var model: RemoteModel
-    @Environment(\\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
+
+    // Explicit: the private @EnvironmentObject would otherwise make the memberwise
+    // initializer private.
+    init(isFirstRun: Bool = false) {
+        self.isFirstRun = isFirstRun
+    }
 
     var body: some View {
         ScrollView {

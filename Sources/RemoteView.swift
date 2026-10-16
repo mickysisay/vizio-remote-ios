@@ -4,6 +4,12 @@ struct RemoteView: View {
     @EnvironmentObject private var model: RemoteModel
     @Binding var showingSettings: Bool
 
+    // Explicit: the private @EnvironmentObject would otherwise make the memberwise
+    // initializer private, and ContentView (another file) could not call it.
+    init(showingSettings: Binding<Bool>) {
+        self._showingSettings = showingSettings
+    }
+
     private let dpadColumns = [
         GridItem(.flexible(), spacing: 8),
         GridItem(.flexible(), spacing: 8),
@@ -26,7 +32,7 @@ struct RemoteView: View {
                 }
 
                 HStack(spacing: 10) {
-                    RemoteButton(title: "Vol \u2212", height: 70) { Task { await model.press("vol_down") } }
+                    RemoteButton(title: "Vol −", height: 70) { Task { await model.press("vol_down") } }
                     RemoteButton(title: "Vol +", height: 70) { Task { await model.press("vol_up") } }
                 }
 
@@ -47,15 +53,15 @@ struct RemoteView: View {
                 }
 
                 HStack(spacing: 10) {
-                    RemoteButton(title: "\u23EE") { Task { await model.press("seek_back") } }
+                    RemoteButton(title: "⏮") { Task { await model.press("seek_back") } }
                     RemoteButton(title: "Play") { Task { await model.press("play") } }
                     RemoteButton(title: "Pause") { Task { await model.press("pause") } }
-                    RemoteButton(title: "\u23ED") { Task { await model.press("seek_fwd") } }
+                    RemoteButton(title: "⏭") { Task { await model.press("seek_fwd") } }
                 }
 
                 SectionLabel("Channel")
                 HStack(spacing: 10) {
-                    RemoteButton(title: "CH \u2212") { Task { await model.press("ch_down") } }
+                    RemoteButton(title: "CH −") { Task { await model.press("ch_down") } }
                     RemoteButton(title: "CH +") { Task { await model.press("ch_up") } }
                 }
 
@@ -72,7 +78,7 @@ struct RemoteView: View {
             .padding(.bottom, 34)
         }
         .background(Theme.background.ignoresSafeArea())
-        .task { model.startPolling() }
+        .task { await model.startPolling() }
         .onDisappear { model.stopPolling() }
     }
 
@@ -101,7 +107,7 @@ struct RemoteView: View {
     private var statusText: String {
         if let status = model.status {
             let volume = status.volume.map(String.init) ?? "?"
-            return "Input \(status.currentInput ?? "?") \u00B7 Vol \(volume) \u00B7 Mute \(status.mute ?? "?")"
+            return "Input \(status.currentInput ?? "?") · Vol \(volume) · Mute \(status.mute ?? "?")"
         }
         return model.message.isEmpty ? "Connecting ..." : model.message
     }
@@ -120,13 +126,13 @@ struct RemoteView: View {
     private var dpad: some View {
         LazyVGrid(columns: dpadColumns, spacing: 8) {
             Color.clear.frame(height: 54)
-            RemoteButton(title: "\u25B2", height: 54) { Task { await model.press("nav_up") } }
+            RemoteButton(title: "▲", height: 54) { Task { await model.press("nav_up") } }
             Color.clear.frame(height: 54)
-            RemoteButton(title: "\u25C0", height: 54) { Task { await model.press("nav_left") } }
+            RemoteButton(title: "◀", height: 54) { Task { await model.press("nav_left") } }
             RemoteButton(title: "OK", tint: Theme.buttonAlt, height: 54) { Task { await model.press("nav_ok") } }
-            RemoteButton(title: "\u25B6", height: 54) { Task { await model.press("nav_right") } }
+            RemoteButton(title: "▶", height: 54) { Task { await model.press("nav_right") } }
             Color.clear.frame(height: 54)
-            RemoteButton(title: "\u25BC", height: 54) { Task { await model.press("nav_down") } }
+            RemoteButton(title: "▼", height: 54) { Task { await model.press("nav_down") } }
             Color.clear.frame(height: 54)
         }
     }
