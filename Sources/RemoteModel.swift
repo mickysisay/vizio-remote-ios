@@ -7,6 +7,7 @@ final class RemoteModel: ObservableObject {
     @Published private(set) var configured: Bool
     @Published private(set) var status: TVStatus?
     @Published private(set) var message: String = ""
+    @Published private(set) var working = false
     @Published var volumeDraft: Double = 50
 
     // bound to the settings form
@@ -18,21 +19,14 @@ final class RemoteModel: ObservableObject {
     private var poller: Task<Void, Never>?
 
     init() {
-        // Work from locals until every stored property has a value: touching self
-        // (even just reading self.host) is illegal until initialization completes.
         let defaults = UserDefaults.standard
-        let storedHost = defaults.string(forKey: "host") ?? ""
-        let storedPort = defaults.string(forKey: "port") ?? "7345"
-        let storedToken = defaults.string(forKey: "token") ?? ""
-
-        host = storedHost
-        port = storedPort
-        token = storedToken
-        configured = !storedHost.isEmpty && !storedToken.isEmpty
-
-        client.host = storedHost
-        client.port = Int(storedPort) ?? 7345
-        client.token = storedToken
+        host = defaults.string(forKey: "host") ?? ""
+        port = defaults.string(forKey: "port") ?? "7345"
+        token = defaults.string(forKey: "token") ?? ""
+        configured = !host.isEmpty && !token.isEmpty
+        client.host = host
+        client.port = Int(port) ?? 7345
+        client.token = token
     }
 
     var base: String { "https://\(host):\(port)" }
@@ -65,7 +59,7 @@ final class RemoteModel: ObservableObject {
         Task { await refresh() }
     }
 
-    func forget() {
+    func signOut() {
         configured = false
         status = nil
         message = ""
@@ -79,7 +73,10 @@ final class RemoteModel: ObservableObject {
             message = ""
         } else {
             status = nil
-            message = "The TV did not answer. Awake? On the same Wi-Fi?"
+            // The most common cause on a first run is the Local Network permission
+            // (Settings -> Privacy & Security -> Local Network) rather than a wrong
+            // address, so name it instead of leaving the user guessing.
+            message = "The TV did not answer. Allow Local Network for Vizio Remote in Settings, check the TV is awake, and that this phone is on the same Wi-Fi."
         }
     }
 
