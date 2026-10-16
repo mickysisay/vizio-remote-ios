@@ -1,19 +1,22 @@
 name: build-ios-app
 
-# Produces an UNSIGNED .ipa as a build artifact. Sideloading (SideStore/AltStore)
-# signs it with your own Apple ID, so no developer account or Mac is needed here.
-#
-# Actions -> build-ios-app -> Run workflow
+# Builds an UNSIGNED .ipa, uploads it as an artifact, and attaches it to a release so the
+# phone can install it straight from a URL with SideStore:
+#     sidestore://install?url=<asset url>
+# Sideloading signs the app with your own Apple ID, so no developer account and no Mac.
 
 on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -21,18 +24,40 @@ jobs:
       - name: Generate the Xcode project
         run: xcodegen generate
 
+      - name: Report the generated project
+        run: |
+          echo "::notice::files: $(ls -1 | tr '\n' ' ')"
+          echo "::notice::targets+sdk: $(xcodebuild -list -project VizioRemote.xcodeproj 2>&1 | tr '\n' ' ' | cut -c1-700)"
+
       - name: Build unsigned for device
         run: |
-          xcodebuild \
-            -project VizioRemote.xcodeproj \
-            -scheme VizioRemote \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGN_ENTITLEMENTS=""
+          set -o pipefail
+          if xcodebuild \
+               -project VizioRemote.xcodeproj \
+               -target VizioRemote \
+               -configuration Release \
+               -sdk iphoneos \
+               -derivedDataPath build \
+               CODE_SIGNING_ALLOWED=NO \
+               CODE_SIGNING_REQUIRED=NO \
+               2>&1 | tee build.log
+          then
+            echo "BUILD OK"
+          else
+            echo "=== build.log, last 70 lines ==="
+            tail -n 70 build.log || true
+            echo "=== surfacing build errors as annotations (readable without signing in) ==="
+            grep -a "error:" build.log | head -n 25 | while IFS= read -r line; do
+              echo "::error::$(printf '%s' "$line" | sed 's/%/%25/g')"
+            done
+            grep -a -E "xcodebuild: error|does not contain a scheme|BUILD FAILED|The following build commands failed" build.log | head -n 8 | while IFS= read -r line; do
+              echo "::error::$(printf '%s' "$line" | sed 's/%/%25/g')"
+            done
+            exit 1
+          fi
+
+      - name: Show what was built
+        run: ls -la build/Build/Products/Release-iphoneos/ || true
 
       - name: Package the .ipa
         run: |
@@ -42,8 +67,24 @@ jobs:
           ls -lh VizioRemote-unsigned.ipa
 
       - name: Upload the artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: VizioRemote-unsigned-ipa
           path: VizioRemote-unsigned.ipa
           if-no-files-found: error
+
+      - name: Publish a release carrying the .ipa
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="build-$(date -u +%Y%m%d-%H%M%S)"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/VizioRemote-unsigned.ipa"
+          gh release create "$tag" VizioRemote-unsigned.ipa \
+            --title "Vizio Remote $tag" \
+            --notes "Unsigned IPA built from ${GITHUB_SHA:0:7}.
+
+          Install with SideStore by opening this on the phone:
+
+              sidestore://install?url=${url}
+          "
+          echo "::notice::install on the phone with: sidestore://install?url=${url}"
