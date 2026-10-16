@@ -1,0 +1,49 @@
+name: build-ios-app
+
+# Produces an UNSIGNED .ipa as a build artifact. Sideloading (SideStore/AltStore)
+# signs it with your own Apple ID, so no developer account or Mac is needed here.
+#
+# Actions -> build-ios-app -> Run workflow
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: xcodegen generate
+
+      - name: Build unsigned for device
+        run: |
+          xcodebuild \
+            -project VizioRemote.xcodeproj \
+            -scheme VizioRemote \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS=""
+
+      - name: Package the .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/VizioRemote.app Payload/
+          zip -qry VizioRemote-unsigned.ipa Payload
+          ls -lh VizioRemote-unsigned.ipa
+
+      - name: Upload the artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VizioRemote-unsigned-ipa
+          path: VizioRemote-unsigned.ipa
+          if-no-files-found: error
