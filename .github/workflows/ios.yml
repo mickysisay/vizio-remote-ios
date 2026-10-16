@@ -24,10 +24,13 @@ jobs:
       - name: Generate the Xcode project
         run: xcodegen generate
 
-      - name: Report the generated project
+      - name: Report toolchain and project
         run: |
+          echo "::notice::xcodebuild $(xcodebuild -version | tr '\n' ' ')"
+          echo "::notice::xcodegen $(xcodegen --version 2>&1)"
           echo "::notice::files: $(ls -1 | tr '\n' ' ')"
-          echo "::notice::targets+sdk: $(xcodebuild -list -project VizioRemote.xcodeproj 2>&1 | tr '\n' ' ' | cut -c1-700)"
+          echo "::notice::project format on disk: $(grep -m1 objectVersion VizioRemote.xcodeproj/project.pbxproj)"
+          echo "::notice::targets: $(xcodebuild -list -project VizioRemote.xcodeproj 2>&1 | tr '\n' ' ' | cut -c1-500)"
 
       - name: Build unsigned for device
         run: |
@@ -37,7 +40,7 @@ jobs:
                -target VizioRemote \
                -configuration Release \
                -sdk iphoneos \
-               -derivedDataPath build \
+               CONFIGURATION_BUILD_DIR="$PWD/build/products" \
                CODE_SIGNING_ALLOWED=NO \
                CODE_SIGNING_REQUIRED=NO \
                2>&1 | tee build.log
@@ -57,12 +60,12 @@ jobs:
           fi
 
       - name: Show what was built
-        run: ls -la build/Build/Products/Release-iphoneos/ || true
+        run: ls -la build/products/ || true
 
       - name: Package the .ipa
         run: |
           mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/VizioRemote.app Payload/
+          cp -R build/products/VizioRemote.app Payload/
           zip -qry VizioRemote-unsigned.ipa Payload
           ls -lh VizioRemote-unsigned.ipa
 
@@ -81,10 +84,5 @@ jobs:
           url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/VizioRemote-unsigned.ipa"
           gh release create "$tag" VizioRemote-unsigned.ipa \
             --title "Vizio Remote $tag" \
-            --notes "Unsigned IPA built from ${GITHUB_SHA:0:7}.
-
-          Install with SideStore by opening this on the phone:
-
-              sidestore://install?url=${url}
-          "
+            --notes "Unsigned IPA built from ${GITHUB_SHA:0:7}. Install with SideStore by opening this on the phone: sidestore://install?url=${url}"
           echo "::notice::install on the phone with: sidestore://install?url=${url}"

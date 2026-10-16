@@ -4,6 +4,10 @@ options:
   deploymentTarget:
     iOS: "16.0"
   createIntermediateGroups: true
+  # XcodeGen defaults to the Xcode 16 project format (objectVersion 77), which Xcode 15.4
+  # on the macos-14 runners cannot open at all ("future Xcode project file format").
+  # xcode15_3 writes the older format that Xcode 15.x reads.
+  projectFormat: xcode15_3
 
 targets:
   VizioRemote:
