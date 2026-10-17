@@ -15,6 +15,9 @@ final class RemoteModel: ObservableObject {
     @Published var port: String
     @Published var token: String
 
+    /// text to type into whatever field the TV has focused (a YouTube search box, say)
+    @Published var typed: String = ""
+
     private let client = TVClient()
     private var poller: Task<Void, Never>?
 
@@ -169,6 +172,33 @@ final class RemoteModel: ObservableObject {
             message = "Cannot reach the TV at \(base)."
         }
         await refresh()
+    }
+
+    /// Type the phone's text into the TV, one ASCII keypress per character. The TV's own
+    /// on-screen keyboard has to be focused first (open YouTube's search, for instance),
+    /// because these are keystrokes, not a text field on the set.
+    func typeText() async {
+        guard configured else { return }
+        let characters = Array(typed)
+        guard !characters.isEmpty else {
+            message = "Type something first."
+            return
+        }
+        var sent = 0
+        for character in characters {
+            // A newline in the field means Enter, not linefeed (10).
+            let code = character == "\n" ? 13 : Int(character.asciiValue ?? 0)
+            guard code > 0 else { continue }
+            if (try? await client.pressASCII(code)) == true { sent += 1 }
+            // Small gap: the set drops keys that arrive faster than it can handle them.
+            try? await Task.sleep(nanoseconds: 45_000_000)
+        }
+        message = sent == 0 ? "Nothing sent." : "Typed \(sent) of \(characters.count) characters."
+    }
+
+    func backspace() async {
+        guard configured else { return }
+        _ = try? await client.press("backspace")
     }
 
     func startPolling() {

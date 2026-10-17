@@ -48,6 +48,7 @@ enum TVKeys {
         "dash":         KeyDef(codeset: 0,  code: 45),
         "dot":          KeyDef(codeset: 0,  code: 46),
         "enter":        KeyDef(codeset: 0,  code: 13),
+        "backspace":    KeyDef(codeset: 0,  code: 8),
 
         // Video (codeset 6): the remote's PIC key cycles the picture mode; wide cycles aspect.
         "pic":          KeyDef(codeset: 6,  code: 0),
@@ -175,6 +176,17 @@ final class TVClient: NSObject, URLSessionDelegate {
         guard let key = TVKeys.all[name] else { return false }
         let reply = try await call("PUT", "/key_command/", [
             "KEYLIST": [["CODESET": key.codeset, "CODE": key.code, "ACTION": "KEYPRESS"]]
+        ])
+        return succeeded(reply)
+    }
+
+    /// One ASCII character as a keypress (codeset 0). This is the only text-entry route
+    /// this firmware has - /key/text, /keyboard and /text_input are all 404 - so typing
+    /// means feeding characters into whatever field the TV currently has focused.
+    @discardableResult
+    func pressASCII(_ code: Int) async throws -> Bool {
+        let reply = try await call("PUT", "/key_command/", [
+            "KEYLIST": [["CODESET": 0, "CODE": code, "ACTION": "KEYPRESS"]]
         ])
         return succeeded(reply)
     }
