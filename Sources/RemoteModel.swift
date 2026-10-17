@@ -174,26 +174,36 @@ final class RemoteModel: ObservableObject {
         await refresh()
     }
 
-    /// Type the phone's text into the TV, one ASCII keypress per character. The TV's own
-    /// on-screen keyboard has to be focused first (open YouTube's search, for instance),
-    /// because these are keystrokes, not a text field on the set.
+    /// Type the phone's text into the TV. The set has no text API - every text endpoint is
+    /// 404 - so this sends one ASCII keypress per character to whatever the set has
+    /// focused. Practically: open a search box on the TV first, so its keyboard is up.
     func typeText() async {
+        await send(typed)
+    }
+
+    /// Send a fixed string, so the UI can offer a one-tap test.
+    func typeText(_ text: String) async {
+        await send(text)
+    }
+
+    private func send(_ text: String) async {
         guard configured else { return }
-        let characters = Array(typed)
+        let characters = Array(text)
         guard !characters.isEmpty else {
             message = "Type something first."
             return
         }
         var sent = 0
         for character in characters {
-            // A newline in the field means Enter, not linefeed (10).
+            // A newline means Enter (13), not linefeed (10).
             let code = character == "\n" ? 13 : Int(character.asciiValue ?? 0)
             guard code > 0 else { continue }
             if (try? await client.pressASCII(code)) == true { sent += 1 }
-            // Small gap: the set drops keys that arrive faster than it can handle them.
-            try? await Task.sleep(nanoseconds: 45_000_000)
+            // Slower than feels necessary on purpose: the set drops keys sent too fast.
+            try? await Task.sleep(nanoseconds: 90_000_000)
         }
-        message = sent == 0 ? "Nothing sent." : "Typed \(sent) of \(characters.count) characters."
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        message = sent == 0 ? "Nothing sent." : "Sent \(sent) character\(sent == 1 ? "" : "s") - check the TV."
     }
 
     func backspace() async {
