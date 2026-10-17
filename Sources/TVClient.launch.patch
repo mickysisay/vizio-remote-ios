@@ -1,0 +1,19 @@
+    /// Launch by numeric id.
+    ///
+    /// The VALUE object must have the exact shape `GET /app/current` reports. Measured on
+    /// this V505-G9: {APP_ID, NAME_SPACE} alone answers SUCCESS and does nothing, while
+    /// the same object plus MESSAGE and TYPE actually opens the app. Callers should still
+    /// confirm with currentApp(), because an unknown id is silently ignored.
+    @discardableResult
+    func launch(_ app: TVApp) async throws -> Bool {
+        let reply = try await call("PUT", "/app/launch", [
+            "REQUEST": "LAUNCH",
+            "VALUE": [
+                "APP_ID": app.appId,
+                "NAME_SPACE": app.nameSpace,
+                "MESSAGE": "",
+                "TYPE": "T_APP_V1"
+            ]
+        ])
+        return succeeded(reply)
+    }
