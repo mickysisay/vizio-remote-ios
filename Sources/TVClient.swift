@@ -71,9 +71,9 @@ struct TVApp: Identifiable, Hashable {
 /// How this firmware addresses apps, established empirically on a V505-G9 (firmware 4.x):
 ///
 ///  - `GET /app_list` does not exist (404), so there is no catalogue to enumerate.
-///  - `PUT /app/launch` wants an object: {"REQUEST":"LAUNCH","VALUE":{"APP_ID":..,"NAME_SPACE":..}}.
-///    A string VALUE crashes its handler (500), and an unknown APP_ID returns SUCCESS while
-///    doing nothing - so the status code alone is not proof of a launch.
+///  - `PUT /app/launch` needs VALUE objects shaped exactly like `GET /app/current` returns:
+///    {APP_ID, NAME_SPACE, MESSAGE, TYPE}. Drop MESSAGE or TYPE and the set answers
+///    SUCCESS and does nothing - which is why the first build's buttons just went home.
 ///  - `GET /app/current` returns the running app, and its MESSAGE url identifies it, e.g.
 ///    Hulu -> hulu.com, Prime -> atv-ext.amazon.com, Disney+ -> bamgrid.com, Peacock ->
 ///    peacocktv.com. That is what makes it possible to learn an id instead of guessing one.
@@ -180,9 +180,8 @@ final class TVClient: NSObject, URLSessionDelegate {
         return succeeded(reply)
     }
 
-    /// One ASCII character as a keypress (codeset 0). This is the only text-entry route
-    /// this firmware has - /key/text, /keyboard and /text_input are all 404 - so typing
-    /// means feeding characters into whatever field the TV currently has focused.
+    /// One ASCII character as a keypress (codeset 0). Kept for future work: on this firmware
+    /// the set accepts these but its UI ignores them, so synthetic text does not appear.
     @discardableResult
     func pressASCII(_ code: Int) async throws -> Bool {
         let reply = try await call("PUT", "/key_command/", [
@@ -249,13 +248,22 @@ final class TVClient: NSObject, URLSessionDelegate {
         }
     }
 
-    /// Launch by numeric id. The TV answers SUCCESS even for an id that does not exist,
-    /// so callers must confirm with currentApp() rather than trust this return value.
+    /// Launch by numeric id.
+    ///
+    /// The VALUE object must have the exact shape `GET /app/current` reports. Measured on
+    /// this V505-G9: {APP_ID, NAME_SPACE} alone answers SUCCESS and does nothing, while the
+    /// same object plus MESSAGE and TYPE actually opens the app. Callers should still
+    /// confirm with currentApp(), because an unknown id is silently ignored.
     @discardableResult
     func launch(_ app: TVApp) async throws -> Bool {
         let reply = try await call("PUT", "/app/launch", [
             "REQUEST": "LAUNCH",
-            "VALUE": ["APP_ID": app.appId, "NAME_SPACE": app.nameSpace]
+            "VALUE": [
+                "APP_ID": app.appId,
+                "NAME_SPACE": app.nameSpace,
+                "MESSAGE": "",
+                "TYPE": "T_APP_V1"
+            ]
         ])
         return succeeded(reply)
     }
