@@ -1,7 +1,7 @@
 import SwiftUI
 
 // Controls the V505-G9 remote has that the first build of the app lacked: the
-// streaming-app row, the numeric keypad, and CC / Info / PIC / Home.
+// streaming-app row, the numeric keypad, typing, and CC / Info / PIC / Home.
 //
 // These live in an extension that takes the model as a parameter, because RemoteView's
 // @EnvironmentObject is private to its own file and an extension elsewhere cannot see it.
@@ -40,6 +40,32 @@ extension RemoteView {
                 RemoteButton(title: "−", height: 46) { Task { await model.press("dash") } }
                 RemoteButton(title: "0", height: 46) { Task { await model.press("digit_0") } }
                 RemoteButton(title: "⏎", height: 46) { Task { await model.press("enter") } }
+            }
+        }
+    }
+
+    /// Type on the phone into whatever field the TV has focused: open YouTube's search on
+    /// the set (so its on-screen keyboard is up), then type here and hit Send. Each
+    /// character goes out as an ASCII keypress in codeset 0 - this firmware has no text
+    /// endpoint, so keystrokes are the only way to get letters into the TV.
+    func typingSection(_ model: RemoteModel) -> some View {
+        VStack(spacing: 8) {
+            SectionLabel("Keyboard")
+            TextField("type here, then Send", text: Binding(
+                get: { model.typed },
+                set: { model.typed = $0 }
+            ))
+            .textFieldStyle(.roundedBorder)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+
+            LazyVGrid(columns: fourColumns, spacing: 8) {
+                RemoteButton(title: "Send", tint: Theme.buttonAlt, height: 46) {
+                    Task { await model.typeText() }
+                }
+                RemoteButton(title: "⌫", height: 46) { Task { await model.backspace() } }
+                RemoteButton(title: "⏎", height: 46) { Task { await model.press("enter") } }
+                RemoteButton(title: "Clear", height: 46) { model.typed = "" }
             }
         }
     }

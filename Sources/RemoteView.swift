@@ -62,6 +62,8 @@ struct RemoteView: View {
 
                 extraKeys(model)
 
+                typingSection(model)
+
                 keypad(model)
 
                 SectionLabel("Channel")
