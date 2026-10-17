@@ -5,7 +5,7 @@ struct KeyDef {
     let code: Int
 }
 
-/// Key codes from the Vizio SmartCast API docs, all verified on this V505-G9.
+/// Key codes from the Vizio SmartCast API docs, verified on this V505-G9 where noted.
 enum TVKeys {
     static let all: [String: KeyDef] = [
         "vol_up":       KeyDef(codeset: 5,  code: 1),
@@ -61,8 +61,49 @@ struct TVInput: Identifiable, Hashable {
 }
 
 struct TVApp: Identifiable, Hashable {
-    let id: String        // the name the launch API expects, e.g. "Netflix"
-    let display: String   // the label the TV shows for it
+    let id: String        // stable key, e.g. "netflix"
+    let display: String   // button label
+    let appId: String     // the numeric APP_ID this set uses (learned, see TVApps)
+    let nameSpace: Int
+}
+
+/// How this firmware addresses apps, established empirically on a V505-G9 (firmware 4.x):
+///
+///  - `GET /app_list` does not exist (404), so there is no catalogue to enumerate.
+///  - `PUT /app/launch` wants an object: {"REQUEST":"LAUNCH","VALUE":{"APP_ID":..,"NAME_SPACE":..}}.
+///    A string VALUE crashes its handler (500), and an unknown APP_ID returns SUCCESS while
+///    doing nothing - so the status code alone is not proof of a launch.
+///  - `GET /app/current` returns the running app, and its MESSAGE url identifies it, e.g.
+///    Hulu -> hulu.com, Prime -> atv-ext.amazon.com, Disney+ -> bamgrid.com, Peacock ->
+///    peacocktv.com. That is what makes it possible to learn an id instead of guessing one.
+enum TVApps {
+
+    struct Known {
+        let key: String
+        let display: String
+        let needles: [String]     // substrings of the running app's MESSAGE url
+        let appId: String?        // verified here; nil means "learn it, then this button appears"
+        let nameSpace: Int
+
+        func matches(_ message: String) -> Bool {
+            needles.contains { message.range(of: $0, options: .caseInsensitive) != nil }
+        }
+    }
+
+    static let catalogue: [Known] = [
+        Known(key: "youtube", display: "YouTube",
+              needles: ["youtube"], appId: nil, nameSpace: 4),
+        Known(key: "netflix", display: "Netflix",
+              needles: ["netflix"], appId: nil, nameSpace: 4),
+        Known(key: "prime", display: "Prime Video",
+              needles: ["atv-ext.amazon", "amazon.com/blast"], appId: "4", nameSpace: 4),
+        Known(key: "hulu", display: "Hulu",
+              needles: ["hulu.com"], appId: "3", nameSpace: 4),
+        Known(key: "disney", display: "Disney+",
+              needles: ["bamgrid", "disney"], appId: "75", nameSpace: 4),
+        Known(key: "peacock", display: "Peacock",
+              needles: ["peacocktv"], appId: "88", nameSpace: 4)
+    ]
 }
 
 struct TVStatus {
@@ -180,25 +221,30 @@ final class TVClient: NSObject, URLSessionDelegate {
         return succeeded(reply)
     }
 
-    /// The apps the set actually reports (GET /app_list). An empty array means the TV
-    /// did not answer, so the UI shows no app row rather than inventing buttons.
-    func apps() async -> [TVApp] {
+    /// The app the set is running right now (nil when it does not answer).
+    /// The MESSAGE url is the only identity this firmware exposes for an app.
+    func currentApp() async -> (appId: String, nameSpace: Int, message: String)? {
         do {
-            let reply = try await call("GET", "/app_list")
-            return entries(reply).compactMap { item in
-                let value = item["VALUE"] as? [String: Any]
-                guard let name = (value?["NAME"] as? String) ?? (item["NAME"] as? String) else { return nil }
-                return TVApp(id: name, display: name)
-            }
+            let reply = try await call("GET", "/app/current")
+            guard let item = reply["ITEM"] as? [String: Any],
+                  let value = item["VALUE"] as? [String: Any],
+                  let appId = value["APP_ID"] as? String ?? (value["APP_ID"] as? Int).map(String.init)
+            else { return nil }
+            let nameSpace = (value["NAME_SPACE"] as? Int) ?? 4
+            return (appId, nameSpace, (value["MESSAGE"] as? String) ?? "")
         } catch {
-            return []
+            return nil
         }
     }
 
-    /// Launch an installed app by the name /app_list reported.
+    /// Launch by numeric id. The TV answers SUCCESS even for an id that does not exist,
+    /// so callers must confirm with currentApp() rather than trust this return value.
     @discardableResult
-    func launchApp(_ name: String) async throws -> Bool {
-        let reply = try await call("PUT", "/app/launch", ["REQUEST": "LAUNCH", "VALUE": name])
+    func launch(_ app: TVApp) async throws -> Bool {
+        let reply = try await call("PUT", "/app/launch", [
+            "REQUEST": "LAUNCH",
+            "VALUE": ["APP_ID": app.appId, "NAME_SPACE": app.nameSpace]
+        ])
         return succeeded(reply)
     }
 

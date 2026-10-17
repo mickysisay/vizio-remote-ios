@@ -7,9 +7,10 @@ import SwiftUI
 // @EnvironmentObject is private to its own file and an extension elsewhere cannot see it.
 extension RemoteView {
 
-    /// YouTube, Netflix, Prime Video, Hulu, Disney+ and Peacock, in that order.
-    /// Only apps the set reports are shown: the list is GET /app_list on the TV itself,
-    /// so no launch name is guessed here.
+    /// YouTube, Netflix, Prime Video, Hulu, Disney+ and Peacock, in that order. An app
+    /// appears once its numeric id is known: four were verified by reading /app/current
+    /// while they ran, and the rest are learned the first time the set is seen running
+    /// them (this firmware has no app catalogue to query).
     func appsSection(_ model: RemoteModel) -> some View {
         VStack(spacing: 8) {
             if !model.featuredApps.isEmpty {
@@ -17,7 +18,7 @@ extension RemoteView {
                 LazyVGrid(columns: threeColumns, spacing: 8) {
                     ForEach(model.featuredApps) { app in
                         RemoteButton(title: app.display, height: 48) {
-                            Task { await model.launchApp(app.id) }
+                            Task { await model.launch(app) }
                         }
                     }
                 }

@@ -34,6 +34,10 @@ final class RemoteModel: ObservableObject {
         client.host = storedHost
         client.port = Int(storedPort) ?? 7345
         client.token = storedToken
+
+        // Everything above is initialised by now, so the row can be built from what
+        // previous runs learned about this set's app ids.
+        refreshAppRow()
     }
 
     var base: String { "https://\(host):\(port)" }
@@ -78,8 +82,8 @@ final class RemoteModel: ObservableObject {
             status = fresh
             if let volume = fresh.volume { volumeDraft = Double(volume) }
             message = ""
-            // The app row is whatever the set reports, fetched once the TV answers.
-            if apps.isEmpty { apps = await client.apps() }
+            // Learn the id of whatever is running, so its button appears from now on.
+            await learnRunningApp()
         } else {
             status = nil
             // The most common cause on a first run is the Local Network permission
@@ -114,29 +118,56 @@ final class RemoteModel: ObservableObject {
         await refresh()
     }
 
-    /// The six apps worth a dedicated button, in this order. Only apps the TV actually
-    /// lists are returned, so a set without Peacock simply shows a shorter row.
-    var featuredApps: [TVApp] {
-        let wanted = ["YouTube", "Netflix", "Prime", "Hulu", "Disney", "Peacock"]
-        var out: [TVApp] = []
-        for want in wanted {
-            if let hit = apps.first(where: { $0.display.range(of: want, options: .caseInsensitive) != nil }),
-               !out.contains(hit) {
-                out.append(hit)
-            }
+    /// The buttons to show, in catalogue order: YouTube, Netflix, Prime Video, Hulu,
+    /// Disney+, Peacock. An app only appears once its numeric id is known - built in for
+    /// the ones verified on this set, learned at runtime for the rest (open it once and
+    /// its button shows up from then on).
+    var featuredApps: [TVApp] { apps }
+
+    private func refreshAppRow() {
+        let defaults = UserDefaults.standard
+        apps = TVApps.catalogue.compactMap { known in
+            let learned = defaults.string(forKey: "appid." + known.key)
+            guard let appId = learned ?? known.appId else { return nil }
+            let ns = defaults.object(forKey: "ns." + known.key) as? Int ?? known.nameSpace
+            return TVApp(id: known.key, display: known.display, appId: appId, nameSpace: ns)
         }
-        return out
     }
 
-    func launchApp(_ name: String) async {
+    /// Watch what the set is running; if it is one of the catalogue apps, remember its id.
+    /// This firmware has no app catalogue to query, so this is how unknown ids are found.
+    private func learnRunningApp() async {
+        guard let running = await client.currentApp(), !running.message.isEmpty else { return }
+        for known in TVApps.catalogue where known.matches(running.message) {
+            let defaults = UserDefaults.standard
+            if defaults.string(forKey: "appid." + known.key) != running.appId {
+                defaults.set(running.appId, forKey: "appid." + known.key)
+                defaults.set(running.nameSpace, forKey: "ns." + known.key)
+                refreshAppRow()
+            }
+            return
+        }
+    }
+
+    func launch(_ app: TVApp) async {
         guard configured else { return }
         do {
-            let accepted = try await client.launchApp(name)
-            message = accepted ? "" : "The TV did not launch \(name)."
+            let accepted = try await client.launch(app)
+            // The set answers SUCCESS even for an id that does nothing, so confirm the
+            // launch by reading back what it is actually running (APP_ID 1 is the home
+            // screen). Two looks, because a tile can take a moment to take over.
+            var opened = false
+            for attempt in 0..<2 {
+                try? await Task.sleep(nanoseconds: attempt == 0 ? 1_800_000_000 : 1_500_000_000)
+                if let running = await client.currentApp(), running.appId != "1" {
+                    opened = true
+                    break
+                }
+            }
+            message = accepted && opened ? "" : "The TV did not open \(app.display)."
         } catch {
             message = "Cannot reach the TV at \(base)."
         }
-        try? await Task.sleep(nanoseconds: 1_500_000_000)
         await refresh()
     }
 
