@@ -31,13 +31,38 @@ enum TVKeys {
         "seek_back":    KeyDef(codeset: 2,  code: 1),
         "play":         KeyDef(codeset: 2,  code: 3),
         "pause":        KeyDef(codeset: 2,  code: 2),
-        "cc":           KeyDef(codeset: 4,  code: 4)
+        "cc":           KeyDef(codeset: 4,  code: 4),
+
+        // Keypad. Digits and punctuation are plain ASCII in codeset 0, per the SmartCast
+        // API table: "0".."9" are 48..57, "-" is 45, "." is 46 and Return is 13.
+        "digit_0":      KeyDef(codeset: 0,  code: 48),
+        "digit_1":      KeyDef(codeset: 0,  code: 49),
+        "digit_2":      KeyDef(codeset: 0,  code: 50),
+        "digit_3":      KeyDef(codeset: 0,  code: 51),
+        "digit_4":      KeyDef(codeset: 0,  code: 52),
+        "digit_5":      KeyDef(codeset: 0,  code: 53),
+        "digit_6":      KeyDef(codeset: 0,  code: 54),
+        "digit_7":      KeyDef(codeset: 0,  code: 55),
+        "digit_8":      KeyDef(codeset: 0,  code: 56),
+        "digit_9":      KeyDef(codeset: 0,  code: 57),
+        "dash":         KeyDef(codeset: 0,  code: 45),
+        "dot":          KeyDef(codeset: 0,  code: 46),
+        "enter":        KeyDef(codeset: 0,  code: 13),
+
+        // Video (codeset 6): the remote's PIC key cycles the picture mode; wide cycles aspect.
+        "pic":          KeyDef(codeset: 6,  code: 0),
+        "wide":         KeyDef(codeset: 6,  code: 2)
     ]
 }
 
 struct TVInput: Identifiable, Hashable {
     let id: String        // the NAME the API expects, e.g. "HDMI-2"
     let display: String   // the label the TV reports, e.g. "Fire TV Stick"
+}
+
+struct TVApp: Identifiable, Hashable {
+    let id: String        // the name the launch API expects, e.g. "Netflix"
+    let display: String   // the label the TV shows for it
 }
 
 struct TVStatus {
@@ -152,6 +177,28 @@ final class TVClient: NSObject, URLSessionDelegate {
         let reply = try await call("PUT", "/menu_native/dynamic/tv_settings/audio/volume", [
             "REQUEST": "MODIFY", "HASHVAL": hashval, "VALUE": value
         ])
+        return succeeded(reply)
+    }
+
+    /// The apps the set actually reports (GET /app_list). An empty array means the TV
+    /// did not answer, so the UI shows no app row rather than inventing buttons.
+    func apps() async -> [TVApp] {
+        do {
+            let reply = try await call("GET", "/app_list")
+            return entries(reply).compactMap { item in
+                let value = item["VALUE"] as? [String: Any]
+                guard let name = (value?["NAME"] as? String) ?? (item["NAME"] as? String) else { return nil }
+                return TVApp(id: name, display: name)
+            }
+        } catch {
+            return []
+        }
+    }
+
+    /// Launch an installed app by the name /app_list reported.
+    @discardableResult
+    func launchApp(_ name: String) async throws -> Bool {
+        let reply = try await call("PUT", "/app/launch", ["REQUEST": "LAUNCH", "VALUE": name])
         return succeeded(reply)
     }
 
