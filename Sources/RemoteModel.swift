@@ -7,6 +7,7 @@ final class RemoteModel: ObservableObject {
     @Published private(set) var configured: Bool
     @Published private(set) var status: TVStatus?
     @Published private(set) var message: String = ""
+    @Published private(set) var apps: [TVApp] = []
     @Published var volumeDraft: Double = 50
 
     // bound to the settings form
@@ -77,6 +78,8 @@ final class RemoteModel: ObservableObject {
             status = fresh
             if let volume = fresh.volume { volumeDraft = Double(volume) }
             message = ""
+            // The app row is whatever the set reports, fetched once the TV answers.
+            if apps.isEmpty { apps = await client.apps() }
         } else {
             status = nil
             // The most common cause on a first run is the Local Network permission
@@ -107,6 +110,32 @@ final class RemoteModel: ObservableObject {
     func chooseInput(_ name: String) async {
         guard configured else { return }
         _ = try? await client.setInput(name)
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        await refresh()
+    }
+
+    /// The six apps worth a dedicated button, in this order. Only apps the TV actually
+    /// lists are returned, so a set without Peacock simply shows a shorter row.
+    var featuredApps: [TVApp] {
+        let wanted = ["YouTube", "Netflix", "Prime", "Hulu", "Disney", "Peacock"]
+        var out: [TVApp] = []
+        for want in wanted {
+            if let hit = apps.first(where: { $0.display.range(of: want, options: .caseInsensitive) != nil }),
+               !out.contains(hit) {
+                out.append(hit)
+            }
+        }
+        return out
+    }
+
+    func launchApp(_ name: String) async {
+        guard configured else { return }
+        do {
+            let accepted = try await client.launchApp(name)
+            message = accepted ? "" : "The TV did not launch \(name)."
+        } catch {
+            message = "Cannot reach the TV at \(base)."
+        }
         try? await Task.sleep(nanoseconds: 1_500_000_000)
         await refresh()
     }
