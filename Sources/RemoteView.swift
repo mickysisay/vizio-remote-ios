@@ -21,6 +21,7 @@ struct RemoteView: View {
             VStack(spacing: 10) {
                 header
                 statusLine
+                appsSection(model)
 
                 HStack(spacing: 10) {
                     RemoteButton(title: "Power", subtitle: "toggle", tint: Theme.danger, height: 78) {
@@ -58,6 +59,10 @@ struct RemoteView: View {
                     RemoteButton(title: "Pause") { Task { await model.press("pause") } }
                     RemoteButton(title: "⏭") { Task { await model.press("seek_fwd") } }
                 }
+
+                extraKeys(model)
+
+                keypad(model)
 
                 SectionLabel("Channel")
                 HStack(spacing: 10) {
