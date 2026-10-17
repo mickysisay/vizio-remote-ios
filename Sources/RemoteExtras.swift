@@ -44,14 +44,21 @@ extension RemoteView {
         }
     }
 
-    /// Type on the phone into whatever field the TV has focused: open YouTube's search on
-    /// the set (so its on-screen keyboard is up), then type here and hit Send. Each
-    /// character goes out as an ASCII keypress in codeset 0 - this firmware has no text
-    /// endpoint, so keystrokes are the only way to get letters into the TV.
+    /// Type on the phone into the TV's focused text box.
+    ///
+    /// This is keystrokes, not a text API: the set has no text endpoint at all (every one
+    /// tried answers 404), so each character goes out as an ASCII keypress in codeset 0.
+    /// That only lands where the set has focus, so the TV's own on-screen keyboard has to
+    /// be showing when you hit Send - which is what the hint says, and what Test checks.
     func typingSection(_ model: RemoteModel) -> some View {
         VStack(spacing: 8) {
             SectionLabel("Keyboard")
-            TextField("type here, then Send", text: Binding(
+            Text("On the TV: open a search box so its keyboard is showing, then Send here.")
+                .font(.system(size: 11))
+                .foregroundColor(Theme.muted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            TextField("type here", text: Binding(
                 get: { model.typed },
                 set: { model.typed = $0 }
             ))
@@ -59,13 +66,19 @@ extension RemoteView {
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
 
-            LazyVGrid(columns: fourColumns, spacing: 8) {
+            LazyVGrid(columns: threeColumns, spacing: 8) {
                 RemoteButton(title: "Send", tint: Theme.buttonAlt, height: 46) {
                     Task { await model.typeText() }
                 }
+                RemoteButton(title: "Test abc", height: 46) {
+                    Task { await model.typeText("abc") }
+                }
                 RemoteButton(title: "⌫", height: 46) { Task { await model.backspace() } }
                 RemoteButton(title: "⏎", height: 46) { Task { await model.press("enter") } }
-                RemoteButton(title: "Clear", height: 46) { model.typed = "" }
+                RemoteButton(title: "Paste-safe", height: 46) {
+                    Task { await model.typeText("test") }
+                }
+                RemoteButton(title: "Clear box", height: 46) { model.typed = "" }
             }
         }
     }
